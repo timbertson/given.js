@@ -1,19 +1,22 @@
 
 [![Build
-Status](https://api.travis-ci.org/repositories/freshtonic/given.js.svg?branch=master)](https://travis-ci.org/freshtonic/given.js)
+Status](https://api.travis-ci.org/repositories/freshtonic/given.svg?branch=master)](https://travis-ci.org/freshtonic/given.git)
 
 # Given
 
 *Given* is a lazy-evaluation system for use in your specs.
 
 Variables are defined within an environment object and are lazily computed on
-demand. A variable can hold either a value, function or object. If the variable
+demand. A variable can hold either a function or object. If the variable
 is a function it used for computing the value of the variable when it is
 accessed from the environment.
 
 Variables are accessed from the environment as if they are plain JS properties.
 Under the hood, the properties are defined using Object.defineProperty with
 a 'get' accessor in order that their value can be computed on demand.
+
+_WARNING_: Given is not yet stable. The API may change significantly before
+1.0.0 and there may be show-stopping bugs.
 
 ## Installation
 
@@ -29,20 +32,26 @@ Add it to your package.json or `npm install given`.
 
   expect = require('expect.js');
 
-  ddescribe("Given", function() {
+  describe("Given", function() {
     var given;
     given = undefined;
     beforeEach(function() {
-      return given = Given(this);
+      given = Given(this);
     });
 
     it("can define a variable", function() {
-      given('name', 'James Sadler');
+      given('name', function() {
+        return 'James Sadler';
+      });
+
       expect(this.name).to.equal("James Sadler");
     });
 
     it("can define a variable that is depends on another and is computed on demand", function() {
-      given('name', 'James Sadler');
+      given('name', function() {
+        return 'James Sadler';
+      });
+
       given('message', function() {
         return "Hello, " + this.name + "!";
       });
@@ -52,8 +61,29 @@ Add it to your package.json or `npm install given`.
 
     it('can define variables in bulk', function() {
       given({
-        name: 'James Sadler',
-        age: 36
+        name: function() {
+          return 'James Sadler';
+        },
+        age: function() {
+          return 36;
+        }
+      });
+
+      expect(this.name).to.equal('James Sadler');
+      expect(this.age).to.equal(36);
+    });
+
+    it('can define a raw variable', function() {
+      given.raw('name', 'James Sadler');
+      expect(this.name).to.equal('James Sadler');
+    });
+
+    it('can define both raw and lazy variables in bulk', function() {
+      given({
+        name: given.raw('James Sadler'),
+        age: function() {
+          return 36;
+        }
       });
 
       expect(this.name).to.equal('James Sadler');
@@ -61,7 +91,10 @@ Add it to your package.json or `npm install given`.
     });
 
     it('provides a way to explicitly clear the environment', function() {
-      given('name', 'James Sadler');
+      given('name', function() {
+        return 'James Sadler';
+      });
+
       given.clear();
       expect(this.name).to.be(undefined);
     });
@@ -107,7 +140,7 @@ Add it to your package.json or `npm install given`.
 
       given({
         message: function() {
-          return "" + this.name1 + " and " + this.name2;
+          return this.name1 + " and " + this.name2;
         }
       });
 
@@ -231,10 +264,90 @@ Add it to your package.json or `npm install given`.
 
     });
 
+    describe('an edge case', function() {
+      describe('when redefining a variable', function() {
+        it('should not recompute the variable each time it is accessed in the new definition', function() {
+          given({
+            a: function() {
+              return {
+                name: 'James'
+              };
+            }
+          });
+
+          given({
+            a: function() {
+              this.a.name = 'foo';
+              return this.a;
+            }
+          });
+
+          expect(this.a.name).to.equal('foo');
+        });
+
+      });
+
+    });
+
+    describe('creating a function that caches computation of one specific instance variable', function() {
+      var bind;
+      bind = function(fn, self) {
+        return function() {
+          return fn.apply(self, arguments);
+        };
+      };
+      it('lskfjlsf', function() {
+        var boundFn, env, f, makeCachingEnv;
+        env = {};
+        Object.defineProperty(env, 'a', {
+          get: function() {
+            return {
+              name: 'bar'
+            };
+          }
+        });
+
+        makeCachingEnv = function(env, name) {
+          var cache, cachingEnv;
+          cachingEnv = {};
+          cache = undefined;
+          return Object.defineProperty(cachingEnv, name, {
+            get: function() {
+              if (cache != null) {
+                return cache;
+              } else {
+                return cache = env[name];
+              }
+            }
+          });
+
+        };
+        f = function() {
+          this.a.name = 'foo';
+          return this.a;
+        };
+        boundFn = bind(f, makeCachingEnv(env, 'a'));
+        expect(boundFn().name).to.equal('foo');
+      });
+
+    });
+
     describe('is well-behaved and', function() {
+      it('gives a meaningful error message when the RHS is not a function', function() {
+        expect(function() {
+          given({
+            foo: 'bar'
+          });
+
+        }).to.throwException(function(e) {
+          expect(e.message).to.equal('definition of "foo" is not a function - did you mean to call `.raw`?');
+        });
+
+      });
+
       it('does not allow redefinition of "given"', function() {
         expect(function() {
-          return given('given', 'anything');
+          given('given', 'anything');
         }).to.throwException(function(e) {
           expect(e.message).to.equal('cannot redefine given');
         });
@@ -341,6 +454,17 @@ Add it to your package.json or `npm install given`.
 
       });
 
+      describe("provides an isGiven function to identify objects created by Given", function() {
+        it("returns true for the object returned by Given", function() {
+          expect(Given.isGiven(new Given(this))).to.be(true);
+        });
+
+        it("returns true for any other object", function() {
+          expect(Given.isGiven(new Object())).to.be(false);
+        });
+
+      });
+
     });
 
 ```
@@ -352,7 +476,7 @@ Add it to your package.json or `npm install given`.
 Given = require '../build/given'
 expect = require 'expect.js'
 
-ddescribe "Given", ->
+describe "Given", ->
 
   given = undefined
 
@@ -360,23 +484,35 @@ ddescribe "Given", ->
     given = Given @
 
   it "can define a variable", ->
-    given 'name', 'James Sadler'
+    given 'name', -> 'James Sadler'
     expect(@name).to.equal "James Sadler"
 
   it "can define a variable that is depends on another and is computed on demand", ->
-    given 'name', 'James Sadler'
+    given 'name', -> 'James Sadler'
     given 'message', -> "Hello, #{@name}!"
     expect(@message).to.equal 'Hello, James Sadler!'
 
   it 'can define variables in bulk', ->
     given
-      name: 'James Sadler'
-      age: 36
+      name: -> 'James Sadler'
+      age: -> 36
+    expect(@name).to.equal 'James Sadler'
+    expect(@age).to.equal 36
+
+  it 'can define a raw variable', ->
+    given.raw 'name', 'James Sadler'
+    expect(@name).to.equal 'James Sadler'
+
+  it 'can define both raw and lazy variables in bulk', ->
+    given
+      name: given.raw('James Sadler')
+      age: -> 36
+
     expect(@name).to.equal 'James Sadler'
     expect(@age).to.equal 36
 
   it 'provides a way to explicitly clear the environment', ->
-    given 'name', 'James Sadler'
+    given 'name', -> 'James Sadler'
     given.clear()
     expect(@name).to.be undefined
 
@@ -455,7 +591,53 @@ ddescribe "Given", ->
       age: 36
       occupation: 'programmer'
 
+  describe 'an edge case', ->
+
+    describe 'when redefining a variable', ->
+
+      it 'should not recompute the variable each time it is accessed in the new definition', ->
+
+        given a: ->
+          { name: 'James' }
+        given a: ->
+          @a.name = 'foo'
+          @a
+
+        expect(@a.name).to.equal 'foo'
+
+  describe 'creating a function that caches computation of one specific instance variable', ->
+    bind = (fn, self) -> -> fn.apply self, arguments
+
+    it 'lskfjlsf', ->
+
+      env = {}
+      Object.defineProperty env, 'a',
+        get: -> { name: 'bar' }
+
+
+      makeCachingEnv = (env, name) ->
+        cachingEnv = {}
+        cache = undefined
+        Object.defineProperty cachingEnv, name,
+          get: ->
+            if cache?
+              cache
+            else
+              cache = env[name]
+
+      f = ->
+        @a.name = 'foo'
+        @a
+
+      boundFn = bind f, makeCachingEnv(env, 'a')
+
+      expect(boundFn().name).to.equal 'foo'
+
   describe 'is well-behaved and', ->
+
+    it 'gives a meaningful error message when the RHS is not a function', ->
+      expect(-> given foo: 'bar').to.throwException (e) ->
+        expect(e.message).to.equal 'definition of "foo" is not a function - did you mean to call `.raw`?'
 
     it 'does not allow redefinition of "given"', ->
       expect(-> given 'given', 'anything').to.throwException (e) ->
@@ -502,23 +684,19 @@ ddescribe "Given", ->
             definition of 'viaEnv'; Use 'this' within value definitions.
           "
 
+    describe "provides an isGiven function to identify objects created by Given", ->
+      it "returns true for the object returned by Given", ->
+        expect(Given.isGiven(new Given @)).to.be true
+
+      it "returns true for any other object", ->
+        expect(Given.isGiven(new Object())).to.be false
+
 ```
 
 ## Caveats
 
-To set a variable with a value that *is* a function, nest it within
-another function (to avoid ambiguity with dynamically computing a value), like so:
-
-```javascript
-
-env.Let('aFunction', function() {
-    // This function will be the variable's value.
-    return function() {
-        return 'foo';
-    };
-});
-
-```
+Note that you cannot access environment properties via `this.propertyName` when defining raw values -
+if your variable depends on another `given` variable, it must be defined as a function.
 
 ## Running the specs
 
